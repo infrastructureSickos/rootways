@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     tags:
-      - 'v*'
+      - 'rootways-v*'
   pull_request:
     branches: [ main ]
 
@@ -50,7 +50,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/rootways-v')
     outputs:
       modrinth_version_id: ${{ steps.publish.outputs.modrinth_version_id }}
 
@@ -73,9 +73,7 @@ jobs:
 
           TAG="${GITHUB_REF_NAME}"
           JAR_FILE="build/libs/rootways-${MOD_VERSION}.jar"
-
-          # Read modrinth_id from gradle.properties
-          MODRINTH_ID=$(grep '^modrinth_id=' gradle.properties | cut -d= -f2 || echo "rootways")
+          MODRINTH_ID=$(grep '^modrinth_id=' gradle.properties | cut -d= -f2)
 
           DATA=$(python3 -c "
           import json
@@ -106,9 +104,14 @@ jobs:
   update-modpack:
     needs: [build, publish]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/rootways-v')
 
     steps:
+      - name: Checkout mod repo
+        uses: actions/checkout@v4
+        with:
+          path: mod
+
       - name: Checkout server repo
         uses: actions/checkout@v4
         with:
@@ -121,17 +124,15 @@ jobs:
           MODRINTH_VERSION_ID: ${{ needs.publish.outputs.modrinth_version_id }}
         run: |
           set -euo pipefail
-          cd server
 
-          python3 - <<'PYEOF2'
+          MODRINTH_ID=$(grep '^modrinth_id=' mod/gradle.properties | cut -d= -f2)
+
+          python3 - <<PYEOF
           import json, os
 
           version_id = os.environ['MODRINTH_VERSION_ID']
-          modrinth_id = subprocess.run(
-              ['grep', '^modrinth_id=', '../gradle.properties'],
-              capture_output=True, text=True
-          ).stdout.split('=')[1].strip() if False else 'rootways'
-          path = 'mods-list.json'
+          modrinth_id = os.environ['MODRINTH_ID']
+          path = 'server/mods-list.json'
 
           with open(path) as f:
               mods = json.load(f)
@@ -156,7 +157,7 @@ jobs:
           with open(path, 'w') as f:
               json.dump(mods, f, indent=2)
               f.write('\n')
-          PYEOF2
+          PYEOF
 
       - name: Commit and push
         env:
